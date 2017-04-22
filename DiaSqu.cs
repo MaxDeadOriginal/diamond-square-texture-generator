@@ -1,138 +1,142 @@
-using UnityEngine;
 using System.Collections;
+using System.Collections.Generic;
+using Global;
+using UnityEngine;
 
-public class DiaSqu : MonoBehaviour {
-	// Объявление и инициализация размера текстуры и шерховотости(рельефности)
-	public int size = 32;
-	[Range(0,1f)]
-	public float Roughnees = 1.5f;
-	
-	// Объявление массива высот и координат, левого нижнего и правого верхнего, углов
-	private float[,] map;
-	private Vec2int Left;
-	private Vec2int Right;
+public class DiaSqu : MonoBehaviour
+{
+	public int size;
+	public float Roughnees = 0.5f;
 
-	void Start () {
+	Material mat;
+	float[,] map;
+	Texture2D GeneratedTexture;
+
+	void Awake()
+	{
 		size++;
-		map = new float[size,size];
-		Texture2D txt = new Texture2D (size * 2-1, size);
 
-		// Инициализация координат, левого нижнего и правого верхнего, углов
-		Left = new Vec2int (0, 0);
-		Right = new Vec2int (size-1, size-1);
+		mat = gameObject.GetComponent<Renderer>().material;
+		GeneratedTexture = new Texture2D(size, size);
 
-		// Инициализация значений на углах
-		map [Left.x, Left.y] = 0.5f;
-		map [Left.x, Right.y] = 0.5f;
-		map [Right.x, Left.y] = 0.5f;
-		map [Right.x, Right.y] = 0.5f;
-	
-		Generate();
+		map = new float[size, size];
+		map[0, 0] = Random.Range(0.3f, 0.6f);
+		map[0, size - 1] = Random.Range(0.3f, 0.6f);
+		map[size - 1, size - 1] = Random.Range(0.3f, 0.6f);
+		map[size - 1, 0] = Random.Range(0.3f, 0.6f);
 
-		// Запись значений из массива в текстуру
-		for (int i = 0, a = 0; i < size*2-1; i++, a++) {
-			for (int j = 0, b = 0; j < size; j++, b++) {
-				if (a > size-2) {
-					a = 0;
-					b = 0;
-				}
-				txt.SetPixel (i, j, new Color (map [a, b], map [a, b], map [a, b], 0));
-			}
-		}
-		txt.filterMode = FilterMode.Point;
-		txt.Apply ();
-		
-		// Вывод текстуры
-		Material mat = gameObject.GetComponent<Renderer> ().material;
-		mat.mainTexture = txt;
 	}
-
-	// Получение высоты цнтра квадрата опредеоенного точками: L(левая нижняя)
-	//							  R(правая верхняя)
-	// используя значения 
-	private void square(Vec2int L, Vec2int R)
+	void Start()
 	{
-		int l = (R.x - L.x) / 2;
-		if (l > 1) {
-			Vec2int Center = new Vec2int (R.x - l, R.y - l);
-			float a = map [L.x, L.y];
-			float b = map [L.x, R.y];
-			float c = map [R.x, R.y];
-			float d = map [R.x, L.y];
-			map [Center.x, Center.y] = (a + b + c + d) / 4 + Random.Range (-l * (Roughnees / size), l * (Roughnees / size));
-		}
+		//	Задаем стартовые точки - левый нижний и правый верхний углы
+		Vec2int Left = new Vec2int(0, 0);
+		Vec2int Right = new Vec2int(size - 1, size - 1);
+		GeterateMap (Left, Right);
+
+		mat.mainTexture = GeneratedTexture;
+		mat.SetTexture ("_BumpMap", GeneratedTexture);
 	}
-
-	// Получение высот ребер квадрата опредеоенного по его центру(point) и длинне ребра(l)
-	private void diamond(Vec2int point,int l)
+	public List<Quad[]> GenerateList(ref List<Quad[]> input)
 	{
-		float a, b, c, d;
-		
-		if (point.y - l >= 0)
-			a = map [point.x, point.y - l];
-		else
-			a = map [point.x, size - l];  
-		if (point.x - l >= 0)
-			b = map [point.x - l, point.y];
-		else
-			b = map [size - l, point.y];
-		if (point.y + l < size)
-			c = map [point.x, point.y + l];
-		else
-			c = map [point.x, l];    
-		if (point.x + l < size)
-			d = map [point.x + l, point.y];
-		else
-			d = map [l, point.y];
-
-		map [point.x, point.y] = (a + b + c + d) / 4 + Random.Range (-l * (Roughnees / size), l * (Roughnees / size));
+		//	Создание нового списка в который будут записываться подквадраты текущего
+		List<Quad[]> next = new List<Quad[]>();
+		foreach (Quad[] Arr in input)
+			foreach (Quad item in Arr)
+				next.Add(Square(item));
+		foreach (Quad[] Arr in input)
+			foreach (Quad item in Arr)
+				diamond(item);
+		input.Clear ();
+		return next;
 	}
-
-	private void diamondSquare(Vec2int L,Vec2int R)
+	public Quad[] Square(Quad box)
 	{
-		int l = (R.x - L.x) / 2;
-		if (l > 1) {
-			//square (L, R);
-			Vec2int[] points = GetPoints (L, R, l);
-			foreach (Vec2int elem in points)
-				diamond (elem, l);
-			
-			square (L, new Vec2int (l, l));
-			square (new Vec2int (l, l), R);
-			square (points [0], points [3]);
-			square (points [1], points [2]);
-
-			diamondSquare (L, new Vec2int (l, l));
-			diamondSquare (new Vec2int (l, l), R);
-			diamondSquare (points [0], points [3]);
-			diamondSquare (points [1], points [2]);
-		}
-	}
-
-	// Возвращает массив состоящий из координат центров ребер квадрата определенного L и R
-	// Так же принимает hl(тип halfLenght) половину длинны ребра
-	private static Vec2int[] GetPoints(Vec2int L,Vec2int R, int hl)
-	{
-		return new Vec2int[] { 
-			new Vec2int (L.x, L.y + hl),
-			new Vec2int (L.x + hl, L.y), 
-			new Vec2int (R.x, R.y - hl),
-			new Vec2int (R.x - hl, R.y)
+		Vec2int Center = new Vec2int(box.R.x - box.HalfLength, box.R.y - box.HalfLength);
+		map[Center.x, Center.y] = (map[box.L.x, box.L.y] + map[box.L.x, box.R.y] + map[box.R.x, box.R.y] + map[box.R.x, box.L.y]) / 4 + Random.Range(-box.Length * Roughnees / (size - 1), box.Length * Roughnees / (size - 1));
+		return new Quad[]{
+			new Quad(box.L,Center),
+			new Quad(Center,box.R),
+			new Quad(new Vec2int (box.L.x, box.L.y + box.HalfLength),new Vec2int (box.R.x - box.HalfLength, box.R.y)),
+			new Quad(new Vec2int (box.L.x+box.HalfLength, box.L.y),new Vec2int (box.R.x , box.L.y+box.HalfLength))
 		};
 	}
-	
-	public void Generate(){
-		square (Left, Right);
-		diamondSquare (Left, Right);
+	public void diamond(Quad box)
+	{
+		float a, b, c, d;
+		Vec2int Center = new Vec2int(box.L.x + box.HalfLength, box.R.y - box.HalfLength);
+		Vec2int[] points = new Vec2int[] {
+			new Vec2int (Center.x-box.HalfLength,Center.y), //Left
+			new Vec2int (Center.x,Center.y+box.HalfLength), //Top
+			new Vec2int (Center.x+box.HalfLength,Center.y), //Right
+			new Vec2int (Center.x,Center.y-box.HalfLength)  //Bottom
+		};
+		foreach (Vec2int point in points)
+		{
+			if (point.y - box.HalfLength >= 0)
+				a = map[point.x, point.y - box.HalfLength];
+			else
+				a = map[point.x, size - 1 - box.HalfLength];
+			if (point.x - box.HalfLength >= 0)
+				b = map[point.x - box.HalfLength, point.y];
+			else
+				b = map[size-1 - box.HalfLength, point.y];
+			if (point.y + box.HalfLength < size - 1)
+				c = map[point.x, point.y + box.HalfLength];
+			else
+				c = map[point.x, box.HalfLength];
+			if (point.x + box.HalfLength < size - 1)
+				d = map[point.x + box.HalfLength, point.y];
+			else
+				d = map[box.HalfLength, point.y];
+			map[point.x, point.y] = (a + b + c + d) / 4 + Random.Range(-box.Length * Roughnees / (size - 1), box.Length * Roughnees / (size - 1));
+		}
 	}
 
-	private struct Vec2int
+	void GeterateMap (Vec2int Left, Vec2int Right)
 	{
-		public int x;
-		public int y;
-		public Vec2int(int x,int y){
-			this.x=x;
-			this.y=y;
+		//	Инициализация списка массивов квадратов
+		List<Quad[]> box = new List<Quad[]> ();
+		//	Добавление в список первого квадрата
+		box.Add (new Quad[] {
+			new Quad (Left, Right)
+		});
+		//Генерация Diamond-Square
+		for (int l = size; l > 0; l /= 2)
+			box = GenerateList (ref box);
+		//	Запись в текстуру
+		for (int i = 0; i < size; i++)
+			for (int j = 0; j < size; j++)
+				GeneratedTexture.SetPixel (i, j, new Color (map [i, j], map [i, j], map [i, j], 0));
+		GeneratedTexture.filterMode = FilterMode.Trilinear;
+		GeneratedTexture.Apply ();
+		box.Clear ();
+	}
+
+	// Структура определяющая квадрат
+	public struct Quad
+	{
+		//	Левая нижняя точка квадрата
+		public Vec2int L;
+		//	Правая верхняя точка квадрата
+		public Vec2int R;
+		//	Длинна ребра
+		public int Length;
+		//	Половина длинны ребра
+		public int HalfLength;
+		//	Конструкторы
+		public Quad(Vec2int L, Vec2int R)
+		{
+			this.L = L;
+			this.R = R;
+			Length = R.x - L.x;
+			HalfLength = Length / 2;	
+		}
+		public Quad(int LeftX , int LeftY, int RightX , int RightY)
+		{
+			this.L = new Vec2int(LeftX,LeftY);
+			this.R = new Vec2int(RightX,RightY);
+			Length = R.x - L.x;
+			HalfLength = Length / 2;
 		}
 	}
 }
